@@ -35,6 +35,7 @@ Include Files
 #include "thread_network.h"
 #include "thread_app_callbacks.h"
 #include "thread_attributes.h"
+#include "TimersManager.h"
 
 #include "app_init.h"
 #include "app_stack_config.h"
@@ -126,6 +127,7 @@ static void APP_CoapLedCb(coapSessionStatus_t sessionStatus, uint8_t *pData, coa
 static void APP_CoapTempCb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapSinkCb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
 static void App_RestoreLeaderLed(uint8_t *param);
+static void App_CounterCallback(void *);
 
 static void APP_CoapTeam4Cb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
 
@@ -465,7 +467,7 @@ void APP_Commissioning_Handler
             break;
         case gThrEv_MeshCop_CommissionerJoinerAccepted_c:
         	//timer start after second router joins
-        	//TMR_StartLowPowerTimer(mTimer1s_c, gTmrSingleShotTimer_c, 1000, App_CounterCallback, NULL);
+        	TMR_StartSingleShotTimer(mTimer1s_c, 10000, App_CounterCallback, NULL);
             break;
         case gThrEv_MeshCop_CommissionerNwkDataSynced_c:
             break;
@@ -1470,9 +1472,25 @@ uint32_t dataLen
   shell_writeN(addrStr, INET6_ADDRSTRLEN);
   shell_write("\r\n");
 
-//  shell_write("'NON' packet sent 'POST' with payload: ");
-//  shell_writeN((char*) pMySessionPayload, pMyPayloadSize);
-//  shell_write("\r\n");
+  shell_write("payload: ");
+  shell_writeN((char*)pData, dataLen);
+  shell_write("\r\n");
+
+  if(FLib_MemCmp(pData, "timer", 5))
+  {
+	  shell_write("\r\n same: \r\n");
+  }
+}
+
+static void App_CounterCallback(void *pData)
+{
+	(void)pData;
+
+	gCounter ++;
+	//shell_printf("\r Counter %d\n\r", gCounter);
+
+	if(gCounter == 201) gCounter = 0;
+	TMR_StartSingleShotTimer(mTimer1s_c, 1000, App_CounterCallback, NULL);
 }
 
 #if LARGE_NETWORK
