@@ -81,6 +81,7 @@ Private macros
 #define APP_TEMP_URI_PATH                       "/temp"
 #define APP_SINK_URI_PATH                       "/sink"
 #define APP_TEAM4_URI_PATH                      "/team4"
+#define APP_TEAM4R_URI_PATH                      "/team4r" //creating another to avoid conflicts
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
 #endif
@@ -124,6 +125,7 @@ static void APP_CoapGenericCallback(coapSessionStatus_t sessionStatus, uint8_t *
 static void APP_CoapLedCb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapTempCb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapSinkCb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
+static void APP_CoapTeam4rCb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
 static void App_RestoreLeaderLed(uint8_t *param);
 static void App_CoapCounterCallback(void *);
 #if LARGE_NETWORK
@@ -142,6 +144,7 @@ const coapUriPath_t gAPP_LED_URI_PATH  = {SizeOfString(APP_LED_URI_PATH), (uint8
 const coapUriPath_t gAPP_TEMP_URI_PATH = {SizeOfString(APP_TEMP_URI_PATH), (uint8_t *)APP_TEMP_URI_PATH};
 const coapUriPath_t gAPP_SINK_URI_PATH = {SizeOfString(APP_SINK_URI_PATH), (uint8_t *)APP_SINK_URI_PATH};
 const coapUriPath_t gAPP_TEAM4_URI_PATH = {SizeOfString(APP_TEAM4_URI_PATH), (uint8_t *)APP_TEAM4_URI_PATH};
+const coapUriPath_t gAPP_TEAM4R_URI_PATH = {SizeOfString(APP_TEAM4R_URI_PATH), (uint8_t *)APP_TEAM4R_URI_PATH};
 #if LARGE_NETWORK
 const coapUriPath_t gAPP_RESET_URI_PATH = {SizeOfString(APP_RESET_TO_FACTORY_URI_PATH), (uint8_t *)APP_RESET_TO_FACTORY_URI_PATH};
 #endif
@@ -320,8 +323,7 @@ void Stack_to_APP_Handler
 
         case gThrEv_NwkJoinCnf_Success_c:
         	//timer after network connection
-        	shell_printf("\r case: \n\r");
-        	TMR_StartSingleShotTimer(mTimer5s_c,20000,App_CoapCounterCallback,NULL);
+        	TMR_StartSingleShotTimer(mTimer5s_c,5000,App_CoapCounterCallback,NULL);
         	break;
         case gThrEv_NwkJoinCnf_Failed_c:
             APP_JoinEventsHandler(pEventParams->code);
@@ -498,6 +500,7 @@ static void APP_InitCoapDemo
 {
     coapRegCbParams_t cbParams[] =  {{APP_CoapLedCb,  (coapUriPath_t *)&gAPP_LED_URI_PATH},
                                      {APP_CoapTempCb, (coapUriPath_t *)&gAPP_TEMP_URI_PATH},
+									 {APP_CoapTeam4rCb, (coapUriPath_t *)&gAPP_TEAM4R_URI_PATH},
 #if LARGE_NETWORK
                                      {APP_CoapResetToFactoryDefaultsCb, (coapUriPath_t *)&gAPP_RESET_URI_PATH},
 #endif
@@ -1405,25 +1408,80 @@ static void App_CoapCounterCallback(void *pData)
 {
 	(void)pData;
 	coapSession_t *pSession = NULL;
+	static uint8_t pMySessionPayload[3]={0x31,0x32,0x33};
+	static uint32_t pMyPayloadSize = 3;
 
-	if(!IP_IF_IsMyAddr(gIpIfSlp0_c, &gCoapDestAddress))
-	{
-		pSession = COAP_OpenSession(mAppCoapInstId);
+	pSession = COAP_OpenSession(mAppCoapInstId);
 
-		if(NULL != pSession)
-		{
-			pSession->pCallback = NULL;
-			//ackPloadSize = strlen((char *)pTempString);
-			pSession->pUriPath = (coapUriPath_t *)&gAPP_TEAM4_URI_PATH;
-			pSession->msgType = gCoapConfirmable_c;
-			pSession->code = gCoapGET_c;
-			FLib_MemCpy(&pSession->remoteAddrStorage.ss_addr, &gCoapDestAddress, sizeof(ipAddr_t));
+	pSession->pCallback = NULL;
+	FLib_MemCpy(&pSession->remoteAddrStorage.ss_addr, &gCoapDestAddress, sizeof(ipAddr_t));
+	//ackPloadSize = strlen((char *)pTempString);
+	pSession->pUriPath = (coapUriPath_t *)&gAPP_TEAM4_URI_PATH;
 
-			COAP_Send(pSession, gCoapMsgTypeConGet_c, NULL, 0);
-		}
-	}
+	//pSession->msgType = gCoapNonConfirmable_c;
+	//pSession->code = gCoapPUT_c;
+	COAP_Send(pSession, gCoapMsgTypeNonGet_c, pMySessionPayload, pMyPayloadSize);
+
 	//timer after network connection
-	//TMR_StartSingleShotTimer(mTimer5s_c,5000,App_CoapCounterCallback,NULL);
+	TMR_StartSingleShotTimer(mTimer5s_c,5000,App_CoapCounterCallback,NULL);
+}
+
+static void APP_CoapTeam4rCb
+(
+coapSessionStatus_t sessionStatus,
+uint8_t *pData,
+coapSession_t *pSession,
+uint32_t dataLen
+)
+
+{
+  char addrStr[INET6_ADDRSTRLEN];
+  //COAP_AddOptionToList(pMySession,COAP_URI_PATH_OPTION, (uint8_t *)APP_TEAM4R_URI_PATH,SizeOfString(APP_TEAM4R_URI_PATH));
+  ntop(AF_INET6, (ipAddr_t*)&pSession->remoteAddrStorage.ss_addr, addrStr, INET6_ADDRSTRLEN);
+
+    if (gCoapConfirmable_c == pSession->msgType)
+  {
+    if (gCoapGET_c == pSession->code)
+    {
+    	shell_write("'CON' packet received 'GET' from: ");
+    }
+    if (gCoapPOST_c == pSession->code)
+    {
+      shell_writeN((char*)pData, dataLen);
+      shell_write(" from: ");
+      shell_writeN(addrStr, INET6_ADDRSTRLEN);
+      shell_write("\r\n");
+
+    }
+    if (gCoapPUT_c == pSession->code)
+    {
+      shell_write("'CON' packet received 'PUT' from: ");
+
+    }
+    if (gCoapFailure_c!=sessionStatus)
+    {
+      COAP_Send(pSession, gCoapMsgTypeAckSuccessChanged_c, NULL, 0);
+    }
+  }
+
+  else if(gCoapNonConfirmable_c == pSession->msgType)
+  {
+    if (gCoapGET_c == pSession->code)
+    {
+    	shell_write("'NON' packet received 'GET' from: ");
+    }
+    if (gCoapPOST_c == pSession->code)
+    {
+      shell_writeN((char*)pData, dataLen);
+      shell_write(" from: ");
+      shell_writeN(addrStr, INET6_ADDRSTRLEN);
+      shell_write("\r\n");
+    }
+    if (gCoapPUT_c == pSession->code)
+    {
+      shell_write("'NON' packet received 'PUT' from: ");
+    }
+  }
 }
 #if LARGE_NETWORK
 /*!*************************************************************************************************
